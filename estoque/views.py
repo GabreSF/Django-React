@@ -1,41 +1,51 @@
-from django.http import JsonResponse
-from rest_framework import status
+from rest_framework import permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from django.contrib.auth import authenticate, login
-from django.contrib.auth import get_user_model
-from .serializers import UserSerializer
+from django.contrib.auth import login, get_user_model, logout
+from rest_framework.authentication import SessionAuthentication
+from .serializers import UserRegisterSerializer, UserLoginSerializer, UserSerializer
+from .validations import custom_validation, validate_email, validate_password
 
-
-class LoginView(APIView):
-    def post(self, request):
-        data = request.data
-        email = data.get('email', '')
-        password = data.get('password', '')
-
-        user = authenticate(request, username=email, password=password)
-
-        if user is not None:
-            login(request, user)
-            return JsonResponse({'message': 'Login bem-sucedido'})
-        else:
-            return JsonResponse({'error': 'Credenciais inválidas'}, status=400)
+UserModel = get_user_model()
 
 class RegisterView(APIView):
+    permission_classes = (permissions.AllowAny,)
+
+    def post(self, request):
+        clean_data = custom_validation(request.data)
+        serializer = UserRegisterSerializer(data=clean_data)
+
+        if serializer.is_valid():
+            user = serializer.create(clean_data)
+            if user:
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class LoginView(APIView):
+    permission_classes = (permissions.AllowAny,)
+    authentication_classes = (SessionAuthentication,)
+
     def post(self, request):
         data = request.data
-        first_name = data.get('firstName', '')
-        last_name = data.get('lastName', '')
-        email = data.get('email', '')
-        password = data.get('password', '')
+        assert validate_email(data)
+        assert validate_password(data)
+        serializer = UserLoginSerializer(data=data)
 
-        if not (first_name and last_name and email and password):
-            return JsonResponse({'error': 'Todos os campos são obrigatórios'}, status=400)
+        if serializer.is_valid():
+            user = serializer.check_user(data)
+            login(request, user)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        User = get_user_model()
-        if User.objects.filter(email=email).exists():
-            return JsonResponse({'error': 'Este email já está em uso'}, status=400)
+class UserLogout(APIView):
+    def post(self, request):
+        logout(request)
+        return Response(status=status.HTTP_200_OK)
 
-        user = User.objects.create_user(username=email, password=password, first_name=first_name, last_name=last_name)
+class UserView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+    authentication_classes = (SessionAuthentication,)
 
-        return JsonResponse({'message': 'Registro bem-sucedido'}, status=201)
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response({'user': serializer.data}, status=status.HTTP_200_OK)
