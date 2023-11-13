@@ -62,6 +62,7 @@ CORS_ALLOWED_ORIGINS = [
 ]  # Defina como False para configurar origens permitidas
 
 CORS_ALLOW_CREDENTIALS = True
+APPEND_SLASH = False
 
 ROOT_URLCONF = 'backend.urls'
 
